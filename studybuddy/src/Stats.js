@@ -9,6 +9,7 @@ Chart.register(ArcElement);
 const StatsComponent = () => {
   const [topSections, setTopSections] = useState([]);
   const [topCollections, setTopCollections] = useState([]);
+  const [mostDifficult, setMostDifficult] = useState([]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -24,12 +25,19 @@ const StatsComponent = () => {
             username: localStorage.getItem('userName')
           }
         });
+
+        const hardestResponse = await axios.get('http://localhost:5000/most_challenging', {
+          params: {
+            username: localStorage.getItem('userName')
+          }
+        });
+
         const topSectionsLimited = sectionResponse.data.top_sections.slice(0, 5);
-        // Limit top collections to the first 5 items
         const topCollectionsLimited = collectionResponse.data.top_collections.slice(0, 5);
-  
+
         setTopSections(topSectionsLimited);
         setTopCollections(topCollectionsLimited);
+        setMostDifficult(hardestResponse.data.most_challenging_sections); // Ensure this is an array
       } catch (error) {
         console.error('Error fetching data:', error);
       }
@@ -38,12 +46,10 @@ const StatsComponent = () => {
     fetchData();
   }, []);
 
-  // Function to convert milliseconds to minutes
   const convertToMinutes = (milliseconds) => {
     return Math.round(milliseconds / (1000 * 60));
   };
 
-  // Prepare data for Pie Chart (Sections)
   const sectionChartData = {
     labels: topSections.map(section => section.section_name),
     datasets: [{
@@ -69,7 +75,6 @@ const StatsComponent = () => {
     }]
   };
 
-  // Prepare data for Pie Chart (Collections)
   const collChartData = {
     labels: topCollections.map(collection => collection.collection_name),
     datasets: [{
@@ -100,17 +105,36 @@ const StatsComponent = () => {
       <Navbar></Navbar>
 
       <h2 style={{ textAlign: 'center', marginBottom: '20px', fontSize: '3.5rem', color: 'gray' }}>Top Collections</h2>
+      <div style={{ maxWidth: '250px', margin: 'auto' }}>
+        <Pie data={collChartData} />
+      </div>
 
-    <div style={{ maxWidth: '250px', margin: 'auto' }}>
-      <Pie data={collChartData} />
-    
-    </div>
-    <h2 style={{ textAlign: 'center', marginBottom: '20px', fontSize: '3.5rem', color: 'gray' }}>Top Sections</h2>
-
+      <h2 style={{ textAlign: 'center', marginBottom: '20px', fontSize: '3.5rem', color: 'gray' }}>Top Sections</h2>
       <div style={{ maxWidth: '250px', margin: 'auto' }}>
         <Pie data={sectionChartData} />
       </div>
 
+      <h2 style={{ textAlign: 'center', marginBottom: '20px', fontSize: '3.5rem', color: 'gray' }}>Most Challenging Topics</h2>
+      <div style={{ maxWidth: '80%', margin: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={{ padding: '10px', textAlign: 'left', backgroundColor: '#f2f2f2' }}>#</th>
+              <th style={{ padding: '10px', textAlign: 'left', backgroundColor: '#f2f2f2' }}>Section Name</th>
+              <th style={{ padding: '10px', textAlign: 'left', backgroundColor: '#f2f2f2' }}>Average Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {mostDifficult.map((section, index) => (
+              <tr key={index}>
+                <td style={{ padding: '10px', borderBottom: '1px solid #ddd' }}>{index + 1}</td>
+                <td style={{ padding: '10px', borderBottom: '1px solid #ddd' }}>{section.section_name}</td>
+                <td style={{ padding: '10px', borderBottom: '1px solid #ddd' }}>{section.avg_score.toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };

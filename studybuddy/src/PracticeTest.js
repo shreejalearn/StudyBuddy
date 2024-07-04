@@ -7,7 +7,7 @@ const QuizComponent = () => {
     const collName = localStorage.getItem('collectionName');
     const chapterName = localStorage.getItem('currentSectionName');
     const collectionId = localStorage.getItem('currentCollection');
-    
+    const [quizSubmitted, setQuizSubmitted] = useState(false);
     const [userAnswers, setUserAnswers] = useState({});
     const [correctAnswers, setCorrectAnswers] = useState({});
     const [showResults, setShowResults] = useState(false);
@@ -19,6 +19,10 @@ const QuizComponent = () => {
     const [startTime, setStartTime] = useState(null);
     const [endTime, setEndTime] = useState(null);
     const [totalTimeSpent, setTotalTimeSpent] = useState(0);
+    const [score, setScore] = useState(0);
+    const [totalQuestions, setTotalQuestions] = useState(0);
+  
+
     useEffect(() => {
         let startTime = null;
         let endTime = null;
@@ -132,23 +136,49 @@ const QuizComponent = () => {
 
     const handleSubmit = () => {
         let correct = {};
+        let totalScore = 0;
         questions.forEach((q, index) => {
-            if (q.type === 'tf') {
-                correct[index] = q.answer.toLowerCase() === 'true';
-            } else {
-                correct[index] = q.answer.toLowerCase();
+          if (q.type === 'tf') {
+            correct[index] = q.answer.toLowerCase() === 'true';
+            if (correct[index]) {
+              totalScore++;
             }
+          } else {
+            correct[index] = q.answer.toLowerCase();
+            if (checkAnswer(userAnswers[index], q.answer, q.type)) {
+              totalScore++;
+            }
+          }
         });
         setCorrectAnswers(correct);
         setShowResults(true);
-    };
+        setScore(totalScore);
+        setTotalQuestions(questions.length);
 
-    const resetQuiz = () => {
+        saveTestScore(totalScore, questions.length);
+
+      };
+
+      const resetQuiz = () => {
         setUserAnswers({});
         setCorrectAnswers({});
         setShowResults(false);
-    };
+        setScore(0);
+      };
+      
+      
 
+      const saveTestScore = async (score, totalQuestions) => {
+        try {
+          await axios.post('http://localhost:5000/save_test_score', {
+            collection_id: collectionId,
+            section_id: chapterId,
+            percentage: ((score / totalQuestions) * 100).toFixed(2),
+          });
+        } catch (error) {
+          console.error('Error saving test score:', error);
+        }
+      };
     const checkAnswer = (userAnswer, correctAnswer, type) => {
         if (type === 'tf') {
             return userAnswer.toLowerCase() === correctAnswer.toString().toLowerCase();
@@ -249,6 +279,8 @@ const QuizComponent = () => {
                                                 value="true"
                                                 checked={userAnswers[index] === 'true'}
                                                 onChange={(e) => handleAnswerChange(e, index)}
+                                                disabled={quizSubmitted}
+
                                             /> True
                                         </label>
                                         <label style={{ marginLeft: '10px' }}>
@@ -258,6 +290,8 @@ const QuizComponent = () => {
                                                 value="false"
                                                 checked={userAnswers[index] === 'false'}
                                                 onChange={(e) => handleAnswerChange(e, index)}
+                                                disabled={quizSubmitted}
+
                                             /> False
                                         </label>
                                     </div>
@@ -266,6 +300,8 @@ const QuizComponent = () => {
                                         value={userAnswers[index] || ''}
                                         onChange={(e) => handleAnswerChange(e, index)}
                                         style={{ width: '100%', minHeight: '100px' }}
+                                        disabled={quizSubmitted}
+
                                     />
                                 )}
                                 {showResults && (
@@ -275,9 +311,28 @@ const QuizComponent = () => {
                                 )}
                             </div>
                         ))}
-                        <button onClick={handleSubmit} style={{ marginTop: '10px', width: '15%' }}>Submit</button>
-                        {showResults && (
+                        <button onClick={handleSubmit} disabled={quizSubmitted}>
+                            Submit
+                            </button>
+                            {showResults && (
+                                <div>
+                                <h2>Results</h2>
+                                <ul>
+                                  {Object.keys(correctAnswers).map((index) => (
+                                    <li key={index}>
+                                      Question {parseInt(index) + 1}:{' '}
+                                      {checkAnswer(userAnswers[index], questions[index].answer, questions[index].type)
+                                        ? 'Correct'
+                                        : 'Incorrect'}
+                                    </li>
+                                  ))}
+                                </ul>
+                                <p>Your score: {score} / {questions.length}</p>
+                                <p>Your percentage: {((score / totalQuestions) * 100).toFixed(2)}%</p>
+
                             <button onClick={resetQuiz} style={{ marginTop: '10px', marginLeft: '10px', width: '15%' }}>Reset</button>
+                            </div>
+
                         )}
                     </div>
                 )}

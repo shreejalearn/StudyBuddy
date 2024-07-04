@@ -1921,6 +1921,8 @@ def get_top_collections():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
 @app.route('/get_flashcards_frq', methods=['POST'])
 def get_flashcards_frq():
     data = request.get_json()
@@ -2157,6 +2159,70 @@ def search_public_sections():
                 public_sections.append({'id': section_doc.id, 'title': title})
 
     return jsonify({'sections': public_sections})
+
+@app.route('/save_test_score', methods=['POST'])
+def save_test_score():
+    data = request.get_json()
+   
+    collection_id = data.get('collection_id')
+    section_id = data.get('section_id')
+    percentage = data.get('percentage')
+
+    if not collection_id or not section_id or not percentage:
+        return jsonify({'error': 'Collection ID or Section id or percentage not provided'})
+    scores = db.collection('collections').document(collection_id).collection('sections').document(section_id).collection('test_scores').document()
+    scores.set({
+        'score': percentage
+    })
+    return jsonify({'success':'success'}), 200
+@app.route('/most_challenging', methods=['GET'])
+def get_most_challenging_sections():
+    username = request.args.get('username')
+
+    try:
+        sections = {}
+        # Query sections created by the logged-in user
+        collections_ref = db.collection('collections').where('username', '==', username)
+
+        # Iterate over each document in the collections_ref query results
+        for collection_doc in collections_ref.stream():
+            collection_id = collection_doc.id
+            sections_ref = db.collection('collections').document(collection_id).collection('sections').stream()
+
+            for doc in sections_ref:
+                section_data = doc.to_dict()
+                section_name = section_data.get('section_name', '')
+                section_id = doc.id
+
+                # Calculate the average test score for the section
+                test_scores_ref = db.collection('collections').document(collection_id).collection('sections').document(section_id).collection('test_scores')
+                test_scores = [float(score.to_dict().get('score', 0)) for score in test_scores_ref.stream()]
+
+                if not test_scores:
+                    continue  # Skip sections with no test scores
+
+                avg_score = sum(test_scores) / len(test_scores)
+
+                if section_name in sections:
+                    current_avg = sections[section_name]['avg_score']
+                    num_tests = sections[section_name]['num_tests']
+                    new_avg = (current_avg * num_tests + avg_score) / (num_tests + 1)
+                    sections[section_name]['avg_score'] = new_avg
+                    sections[section_name]['num_tests'] += 1
+                else:
+                    sections[section_name] = {
+                        'section_name': section_name,
+                        'avg_score': avg_score,
+                        'num_tests': 1
+                    }
+
+        # Sort the sections by average score in ascending order (lowest to highest)
+        most_challenging_sections = sorted(sections.values(), key=lambda x: x['avg_score'])[:5]
+
+        return jsonify({'most_challenging_sections': most_challenging_sections}), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/save_response', methods=['POST'])
 def save_response():
