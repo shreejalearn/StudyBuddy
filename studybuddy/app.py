@@ -85,6 +85,7 @@ from langchain.memory import ConversationBufferMemory
 from langchain_community.llms import HuggingFaceEndpoint
 import chromadb
 from unidecode import unidecode
+global qachain
 
 # from pathlib import Path
 # import chromadb
@@ -98,6 +99,8 @@ from unidecode import unidecode
 # import re
 
 # import os
+qachain = None
+
 
 
 
@@ -283,17 +286,90 @@ async def chatbot(text, q):
     message = q 
     response = await chat(qa_chain, message, chat_history)
     return (f"{response}")
-@app.route('/conversation', methods=['POST'])
-async def conduct_conversation():
-    data = request.get_json()
-    collection_id = data.get('collection_id', '')
-    section_id = data.get('section_id', '')
-    notes_li =  get_notess(collection_id, section_id)
-    notes = ' '.join(notes_li)
 
-    question  = data.get('question', '')
-    response  = await chatbot(notes, question)
-    return jsonify({'response': response})
+@app.route('/conduct_conversation', methods=['POST'])
+async def conduct_conversation_endpoint():
+    try:
+        data = request.get_json()
+        collection_name = data.get('collection_name', '')
+        # qa_chain = data.get('qa_chain', None)
+        question = data.get('question', '')
+        global qachain
+
+        if not qachain:
+            return jsonify({
+                'success': False,
+                'error': 'QA chain not initialized'
+            })
+        
+        chat_history = []  # Initialize or retrieve chat history as needed
+        
+        formatted_chat_history = await format_chat_history(chat_history)
+        response = await chat(qachain, question, formatted_chat_history)
+        
+        return jsonify({
+            'success': True,
+            'response': response
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+@app.route('/initialize_llmchain', methods=['POST'])
+async def initialize_llmchain_endpoint():
+    try:
+        data = request.get_json()
+        collection_id = data.get('collection_id', '')
+        section_id = data.get('section_id', '')
+        notes_li =  get_notess(collection_id, section_id)
+        notes = ' '.join(notes_li)
+
+        vector_db, collection_name = await initialize_database(notes)
+        
+        llm_model = list_llm[default_llm_index]
+        temperature = 0.3
+        max_tokens = 512
+        top_k = 20
+        global qachain
+
+        qa_chain = await initialize_llmchain(llm_model, temperature, max_tokens, top_k, vector_db)
+        qachain=qa_chain
+        # Return necessary information for the conversation endpoint
+        return jsonify({
+            'success': True,
+            'collection_name': collection_name,
+            # 'qa_chain': qa_chain
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
+
+
+
+
+
+
+
+
+
+
+# with initializing at the same time
+# @app.route('/conversation', methods=['POST'])
+# async def conduct_conversation():
+#     data = request.get_json()
+#     collection_id = data.get('collection_id', '')
+#     section_id = data.get('section_id', '')
+#     notes_li =  get_notess(collection_id, section_id)
+#     notes = ' '.join(notes_li)
+
+#     question  = data.get('question', '')
+#     response  = await chatbot(notes, question)
+#     return jsonify({'response': response})
 # # Endpoint for uploading PDF documents
 # @app.route('/upload', methods=['POST'])
 # def upload_documents():
@@ -1801,7 +1877,7 @@ def get_top_sections():
                     }
 
         # Sort the sections by total_time in descending order
-        top_sections = sorted(sections.values(), key=lambda x: x['total_time'], reverse=True)
+        top_sections = sorted(sections.values(), key=lambda x: x['total_time'], reverse=True)[:5]
 
         return jsonify({'top_sections': top_sections}), 200
 
@@ -1839,7 +1915,7 @@ def get_top_collections():
                     'total_time': total_time
                 }
 
-        top_collections = sorted(collections.values(), key=lambda x: x['total_time'], reverse=True)
+        top_collections = sorted(collections.values(), key=lambda x: x['total_time'], reverse=True)[:5]
 
         return jsonify({'top_collections': top_collections}), 200
 

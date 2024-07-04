@@ -24,9 +24,12 @@ const StatsComponent = () => {
             username: localStorage.getItem('userName')
           }
         });
-
-        setTopSections(sectionResponse.data.top_sections);
-        setTopCollections(collectionResponse.data.top_collections);
+        const topSectionsLimited = sectionResponse.data.top_sections.slice(0, 5);
+        // Limit top collections to the first 5 items
+        const topCollectionsLimited = collectionResponse.data.top_collections.slice(0, 5);
+  
+        setTopSections(topSectionsLimited);
+        setTopCollections(topCollectionsLimited);
       } catch (error) {
         console.error('Error fetching data:', error);
       }

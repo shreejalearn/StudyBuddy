@@ -220,9 +220,15 @@ const ChapterPage = () => {
   const [startTime, setStartTime] = useState(null);
   const [endTime, setEndTime] = useState(null);
   const [totalTimeSpent, setTotalTimeSpent] = useState(0);
+  const [componentInitialized, setComponentInitialized] = useState(false);
+
+  
   useEffect(() => {
     let startTime = null;
     let endTime = null;
+    // const timeout = setTimeout(() => {
+    //   setComponentInitialized(true);
+    // }, 2000);
     const fetchNotes = async () => {
       try {
         console.log(collectionId);
@@ -293,7 +299,9 @@ const ChapterPage = () => {
   
     return () => {
       handleBeforeUnload();
+      // clearTimeout(timeout);
     };
+    
   }, [chapterId, collectionId]);
   
   const handleSourceChange = (source) => {
@@ -424,11 +432,11 @@ const ChapterPage = () => {
       //   }
       // };
 
-      const res = await axios.post('http://localhost:5000/conversation', 
+      const res = await axios.post('http://localhost:5000/conduct_conversation', 
         {
-          collection_id: collectionId,
-          section_id: chapterId,
-          question: prompt
+          collection_name: localStorage.getItem('collection_name'),
+          // qa_chain: localStorage.getItem('qaChain'), // Retrieve QA chain from localStorage or state
+          question: prompt,
         }, 
         {
             headers: {
@@ -513,6 +521,30 @@ const ChapterPage = () => {
     setUploadedWorksheet(event.target.files[0]);
   };
 
+  const handleInitialize = async  () => {
+    const response = await axios.post('http://localhost:5000/initialize_llmchain',  
+      {
+        collection_id: collectionId,
+        section_id: chapterId
+      }, 
+      {
+          headers: {
+              'Content-Type': 'application/json'
+          }
+      }
+    );
+      
+    
+    if (response.data.success) {
+      const { collection_name } = response.data;
+      // Handle the initialized collection name and qa_chain as needed
+      console.log(`Initialized collection: ${collection_name}`);
+      localStorage.setItem('collection_name',collection_name);
+      setComponentInitialized(true);
+    } else {
+      console.error('Initialization failed:', response.data.error);
+    }
+  };
   const handleDeleteWorksheet = async (noteId) => {
     try {
       await axios.delete('http://localhost:5000/delete_worksheet', {
@@ -584,6 +616,14 @@ const ChapterPage = () => {
           <div style={styles.aiCommunication}>
             <div style={styles.askQuestion}>
               <h3 style={{color: '#839196'}}>Ask A Question</h3>
+              {!componentInitialized && (
+                <div>
+                  <p>Click the button below to initialize the chat based on your current notes:</p>
+                  <button onClick={handleInitialize}>Initialize Component</button>
+                </div>
+              )}
+              {componentInitialized && (
+                <div>
               <textarea
                 rows="4"
                 cols="50"
@@ -602,6 +642,7 @@ const ChapterPage = () => {
                   }}
                 > {loading ? 'Generating...' : 'Submit'} {/* Conditionally render button text */}
               </button>
+
 
 
               {response && (
@@ -632,6 +673,9 @@ const ChapterPage = () => {
                 </div>
               )}
             </div>
+            )}
+
+          </div>
           </div>
         </div>
       </div>
