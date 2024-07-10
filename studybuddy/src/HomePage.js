@@ -436,33 +436,33 @@ const HomePage = () => {
           params: { username: username }
         });
 
-        if (recentResponse.data.collections && recentResponse.data.collections.length > 0) {
-          const recentSectionsTitles = recentResponse.data.collections.map(collection => collection.title);
-          const recentSectionsString = recentSectionsTitles.join(', ');
+        // if (recentResponse.data.collections && recentResponse.data.collections.length > 0) {
+        //   const recentSectionsTitles = recentResponse.data.collections.map(collection => collection.title);
+        //   const recentSectionsString = recentSectionsTitles.join(', ');
 
-          const recommendationsResponse = await axios.get('http://localhost:5000/recommendations', {
-            params: {
-              username: username,
-              recentSections: recentSectionsString,
-            }
-          });
+        //   const recommendationsResponse = await axios.get('http://localhost:5000/recommendations', {
+        //     params: {
+        //       username: username,
+        //       recentSections: recentSectionsString,
+        //     }
+        //   });
 
-          if (recommendationsResponse.data.recommendations && recommendationsResponse.data.recommendations.length > 0) {
-            const recommendationss = await axios.get('http://localhost:5000/process_recommendations', {
-              params: {
-                recs: recommendationsResponse.data.recommendations
-              }
-            });
+        //   if (recommendationsResponse.data.recommendations && recommendationsResponse.data.recommendations.length > 0) {
+        //     const recommendationss = await axios.get('http://localhost:5000/process_recommendations', {
+        //       params: {
+        //         recs: recommendationsResponse.data.recommendations
+        //       }
+        //     });
 
-            setRecommendedSections(recommendationss.data.recommendations);
-          }
+        //     setRecommendedSections(recommendationss.data.recommendations);
+        //   }
 
           setRecentSections(recentResponse.data.collections);
           setLoading(false);
-        } else {
-          console.error('No recent sections found');
-          setLoading(false);
-        }
+        // } else {
+        //   console.error('No recent sections found');
+        //   setLoading(false);
+        // }
       } catch (error) {
         console.error('Error fetching data:', error);
         setLoading(false);
@@ -499,12 +499,12 @@ const HomePage = () => {
               ))}
             </div>
 
-            <p>Learning Paths For You</p>
+            {/* <p>Learning Paths For You</p>
             <div className="recommendations-container">
               {recommendedSections.map((rec, index) => (
                 <RecommendationCard key={index} recommendation={rec} />
               ))}
-            </div>
+            </div> */}
           </>
         )}
       </div>

@@ -5,6 +5,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import './index.css';
 import App from './App';
 import FillerAuth from './FillerAuth';
+import Annotations from './Annotations';
 import Fill from './Fill';
 import SavedResponses from './SavedResponses';
 import PublicSections from './PublicSectionsPage';
@@ -49,6 +50,7 @@ function MainApp() {
             <Route path="/videos" element={<Videos />} />
             <Route path="/stats" element={<Stats />} />
             <Route path="/mygallery" element={<CollectionsPage />} />
+            <Route path="/annotations" element={<Annotations />} />
             <Route path="/sections" element={<Sections />} />
             <Route path="/retentiontest" element={<RetentionTest />} />
             <Route path="/chapter" element={<Chapter />} />

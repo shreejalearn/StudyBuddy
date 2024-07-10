@@ -4,8 +4,14 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from PIL import Image
 import pytesseract
+from rake_nltk import Rake
+
 import io
 import logging
+from sklearn.metrics.pairwise import cosine_similarity
+import spacy
+from gensim import corpora, models
+import re
 import os
 import asyncio
 import nltk
@@ -322,8 +328,12 @@ async def initialize_llmchain_endpoint():
         data = request.get_json()
         collection_id = data.get('collection_id', '')
         section_id = data.get('section_id', '')
-        notes_li =  get_notess(collection_id, section_id)
-        notes = ' '.join(notes_li)
+        notes_li = get_notess(collection_id, section_id)
+
+        if not notes_li:
+            notes = '*'
+        else:
+            notes = ' '.join(notes_li)
 
         vector_db, collection_name = await initialize_database(notes)
         
@@ -919,7 +929,7 @@ def generate_video_from_notes():
 
 
 
-def suggest_learning_path(explorations, max_suggestions=10, max_retries=3):
+async def suggest_learning_path(explorations, max_suggestions=10, max_retries=3):
     wiki_wiki = wikipediaapi.Wikipedia(
         language='en',
         extract_format=wikipediaapi.ExtractFormat.WIKI,
@@ -1221,30 +1231,64 @@ def note_getter(section_id):
     concatenated_notes = ' '.join(notes)
     return concatenated_notes
 @app.route('/suggest_sections', methods=['GET'])
-def suggest_sections():
+async def suggest_sections():
     collection_id = request.args.get('collection_id')
     if not collection_id:
         return jsonify({'error': 'Collection ID not provided'})
 
     suggestions = []
 
+    
     try:
-        # Assuming you have a 'sections' collection under each 'collection'
         sections_ref = db.collection('collections').document(collection_id).collection('sections')
         sections_docs = sections_ref.stream()
 
         for doc in sections_docs:
-            # Assuming 'section_name' is a field in your section document
             section_name = doc.to_dict().get('section_name', '')
-            suggestions.append({'name': section_name})
+            suggestions.append(section_name)
+        wiki_wiki = wikipediaapi.Wikipedia(
+            language='en',
+            extract_format=wikipediaapi.ExtractFormat.WIKI,
+            user_agent='studybuddy-app/1.0'
+        )
 
-        suggested_concepts = suggest_learning_path([section['name'] for section in suggestions], max_suggestions=5)
+        concept_counter = Counter()
+        learning_keywords = ['concept', 'theory', 'principle', 'method', 'technique', 'algorithm', 'framework', 'model', 'paradigm', 'approach']
 
-        # Prepare the response in the correct format
-        suggested_sections = [{'name': concept} for concept in suggested_concepts]
+        for exploration in suggestions:
+            for attempt in range(3):
+                try:
+                    page = wiki_wiki.page(exploration)
+                    if page.exists():
+                        # Process sections
+                        for section in page.sections:
+                            if any(keyword in section.title.lower() for keyword in learning_keywords):
+                                concept_counter[section.title] += 2
+                        
+                        # Process links
+                        for link in page.links.values():
+                            if any(keyword in link.title.lower() for keyword in learning_keywords):
+                                concept_counter[link.title] += 1
+                    break  # If successful, break the retry loop
+                except (requests.exceptions.RequestException, wikipediaapi.WikipediaException) as e:
+                    if attempt < 2:
+                        print(f"Error occurred: {e}. Retrying in 5 seconds...")
+                        time.sleep(5)
+                    else:
+                        print(f"Failed to process '{exploration}' after {3} attempts.")
+
+        # Ensure we have at least max_suggestions
+        while len(concept_counter) < 5:
+            concept_counter[f"Explore more about {suggestions[len(concept_counter) % len(suggested_sections)]}"] += 1
+
+        # Get top suggestions
+        suggested_sections = [concept for concept, _ in concept_counter.most_common(5)]
+
+        # suggested_concepts = await suggest_learning_path(suggestions, max_suggestions=5)
+
+        # suggested_sections = [{'name': concept} for concept in suggested_concepts]
 
         return jsonify({'suggested_sections': suggested_sections})
-
     except Exception as e:
         return jsonify({'error': str(e)})
 
@@ -1961,6 +2005,30 @@ def get_flashcards_frq():
 
 
 
+@app.route('/get_notes_ann', methods=['GET'])
+def get_notes_ann():
+    section_id = request.args.get('section_id')
+
+    if not section_id:
+        return jsonify({'error': 'Section ID not provided'}), 400
+
+    try:
+        notes = []
+        collections = db.collection('collections').stream()
+        for collection in collections:
+            notes_docs = db.collection('collections').document(collection.id).collection('sections').document(section_id).collection('notes_in_section').stream()
+            for doc in notes_docs:
+                note_data = doc.to_dict()
+                note = {
+                    'id': doc.id,
+                    'title': note_data['tldr'],
+                    'notes': note_data['notes']
+                }
+                notes.append(note)
+        return jsonify({'notes': notes}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/get_notes', methods=['GET'])
 def get_notes():
     section_id = request.args.get('section_id')
@@ -1985,32 +2053,75 @@ model_name = "sentence-transformers/all-MiniLM-L6-v2"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForSequenceClassification.from_pretrained(model_name)
 similarity_pipeline = pipeline("feature-extraction", model=model, tokenizer=tokenizer)
+nlp = spacy.load('en_core_web_sm')
+rake = Rake()
+
+def extract_entities_and_phrases(text):
+    doc = nlp(text)
+    entities = [ent.text for ent in doc.ents]
+    rake.extract_keywords_from_text(text)
+    key_phrases = rake.get_ranked_phrases()[:5]  # Get top 5 key phrases
+    return entities + key_phrases
+
+def perform_topic_modeling(notes):
+    # Preprocess text
+    texts = [[word for word in re.split('\W+', note.lower()) if word not in nlp.Defaults.stop_words]
+             for note in notes]
+    # Create a dictionary representation of the documents
+    dictionary = corpora.Dictionary(texts)
+    # Create a corpus
+    corpus = [dictionary.doc2bow(text) for text in texts]
+    # Apply LDA model
+    lda = models.LdaModel(corpus, num_topics=3, id2word=dictionary, passes=15)
+    return lda.show_topics(formatted=False)
 
 @app.route('/compare_and_fetch_concepts', methods=['POST'])
 def compare_and_fetch_concepts():
-    data = request.json
-    notes = data['notes']
-    user_input = data['userInput']
+    data = request.get_json()
+    notes = data.get('notes', [])
+    user_input = data.get('userInput', '')
     
-    note_texts = [note['tldr'] + " " + note['notes'] for note in notes]
+    if not notes or not user_input:
+        return jsonify({'error': 'Notes or user input is missing'}), 400
+
     user_embedding = similarity_pipeline(user_input)
-    user_embedding = torch.tensor(user_embedding).mean(dim=1)
+    if isinstance(user_embedding, list):
+        user_embedding = torch.tensor(user_embedding).mean(dim=0).unsqueeze(0)  # Ensure 2D shape
+    else:
+        user_embedding = user_embedding.mean(dim=0).unsqueeze(0)  # Ensure 2D shape
 
     results = []
-    for note, note_text in zip(notes, note_texts):
+    for note_text in notes:
         note_embedding = similarity_pipeline(note_text)
-        note_embedding = torch.tensor(note_embedding).mean(dim=1)
-        similarity = cosine_similarity(user_embedding, note_embedding)
-        results.append({'note_id': note['id'], 'similarity': similarity})
+        if isinstance(note_embedding, list):
+            note_embedding = torch.tensor(note_embedding).mean(dim=0).unsqueeze(0)  # Ensure 2D shape
+        else:
+            note_embedding = note_embedding.mean(dim=0).unsqueeze(0)  # Ensure 2D shape
+        similarity = cosine_similarity(user_embedding.detach().numpy(), note_embedding.detach().numpy()).item()  # Convert to scalar
+        results.append({'note_text': note_text, 'similarity': similarity})
 
     results.sort(key=lambda x: x['similarity'], reverse=True)
 
     concepts_mentioned = [note for note in results if note['similarity'] > 0.5]
     concepts_missed = [note for note in results if note['similarity'] <= 0.5]
 
+    # Extract entities and phrases from the notes
+    detailed_concepts_mentioned = []
+    for concept in concepts_mentioned:
+        extracted_concepts = extract_entities_and_phrases(concept['note_text'])
+        detailed_concepts_mentioned.append({
+            'note_text': concept['note_text'],
+            'similarity': concept['similarity'],
+            'detailed_concepts': extracted_concepts
+        })
+    
+    # Perform topic modeling on the notes
+    topics = perform_topic_modeling([note['note_text'] for note in notes])
+
     return jsonify({
-        'concepts_mentioned': concepts_mentioned,
-        'concepts_missed': concepts_missed
+        'concepts_mentioned': detailed_concepts_mentioned,
+        'concepts_missed': concepts_missed,
+        'topics': topics
     })
 
 @app.route('/create_collection', methods=['POST'])
@@ -2054,6 +2165,101 @@ def get_collections():
         collections.append(collection_data)
 
     return jsonify({'collections': collections})
+
+
+
+@app.route('/get_annotations', methods=['GET'])
+def get_annotations():
+    section_id = request.args.get('section_id')
+    note_id = request.args.get('note_id')
+
+    if not section_id:
+        return jsonify({'error': 'Section ID not provided'}), 400
+
+    try:
+        notes = []
+        collections = db.collection('collections').stream()
+        for collection in collections:
+            notes_docs = db.collection('collections').document(collection.id).collection('sections').document(section_id).collection('notes_in_section').document(note_id).collection('annotations').stream()
+            for doc in notes_docs:
+                note_data = doc.to_dict()
+                note_data['id'] = doc.id
+                notes.append(note_data)
+        return jsonify({'annotations': notes}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+@app.route('/upload_annotation', methods=['POST'])
+def upload_annotation():
+    
+    data = request.json
+
+    collection_id = data.get('collection_id')
+    section_id = data.get('section_id')
+    note_id = data.get('note_id')
+    annotation = data.get('annotation')
+    start_ind = data.get('start')
+    end_ind = data.get('end')
+
+    if not collection_id or not section_id or not note_id:
+        return jsonify({'error': 'Collection ID or Section ID or Note ID not provided'}), 400
+
+    try:
+        notes_collection_ref = db.collection('collections').document(collection_id).collection('sections').document(section_id).collection('notes_in_section').document(note_id).collection('annotations')
+        note_ref = notes_collection_ref.document()  
+
+        note_ref.set({'annotation': annotation , 'start_ind': start_ind, 'end_ind':end_ind})
+
+        return jsonify({ 'message': 'Text recognized and stored successfully'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/delete_annotation', methods=['DELETE'])
+def delete_annotation():
+    collection_id = request.args.get('collection_id')
+    section_id = request.args.get('section_id')
+    note_id = request.args.get('note_id')
+    annotation_id = request.args.get('annotation_id')
+
+    if not collection_id or not section_id or not note_id or not annotation_id:
+        return jsonify({'error': 'Collection ID, Section ID, Note ID or Annotation ID not provided'}), 400
+
+    try:
+        notes_collection_ref = db.collection('collections').document(collection_id).collection('sections').document(section_id).collection('notes_in_section').document(note_id).collection('annotations')
+        annotation_ref = notes_collection_ref.document(annotation_id)
+
+        annotation_ref.delete()
+
+        return jsonify({'message': 'Annotation deleted successfully'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/edit_annotation', methods=['PUT'])
+def edit_annotation():
+    data = request.json
+
+    collection_id = data.get('collection_id')
+    section_id = data.get('section_id')
+    note_id = data.get('note_id')
+    annotation_id = data.get('annotation_id')
+    new_annotation = data.get('new_annotation')
+
+    if not collection_id or not section_id or not note_id or not annotation_id or not new_annotation:
+        return jsonify({'error': 'Collection ID, Section ID, Note ID, Annotation ID or new annotation not provided'}), 400
+
+    try:
+        notes_collection_ref = db.collection('collections').document(collection_id).collection('sections').document(section_id).collection('notes_in_section').document(note_id).collection('annotations')
+        annotation_ref = notes_collection_ref.document(annotation_id)
+
+        annotation_ref.update({
+            'annotation': new_annotation
+        })
+
+        return jsonify({'message': 'Annotation updated successfully'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+
 
 
 @app.route('/get_worksheets', methods=['GET'])
@@ -2551,7 +2757,7 @@ def add_to_notes():
             notes_ref = db.collection('collections').document(collection_id).collection('sections').document(section_id).collection('notes_in_section').document()
             notes_ref.set({
                 'notes': response_data['data'],
-                'tldr': f"Sydney AI Response: {tldr}"
+                'tldr': f"AI Response: {tldr}"
             })
 
             response_ref.delete()

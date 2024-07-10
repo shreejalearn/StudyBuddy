@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import Navbar from './Navbar';
 import './styles/speechtotext.css';
 import axios from 'axios';
-import './styles/modal.css'
+import './styles/modal.css';
+
 const Modal = ({ isOpen, onClose, note }) => {
   if (!isOpen) return null;
 
@@ -26,79 +27,55 @@ const SpeechToText = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentNote, setCurrentNote] = useState(null);
   const chapterId = localStorage.getItem('currentSection');
-  const collName = localStorage.getItem('collectionName');
-  const chapterName = localStorage.getItem('currentSectionName');
   const collectionId = localStorage.getItem('currentCollection');
   const [startTime, setStartTime] = useState(null);
-  const [endTime, setEndTime] = useState(null);
   const [totalTimeSpent, setTotalTimeSpent] = useState(0);
-  
+
   useEffect(() => {
-    let startTime = null;
-    let endTime = null;
+    let startTime = new Date().getTime();
+    setStartTime(startTime);
+
     const handleBeforeUnload = () => {
-      endTime = new Date().getTime();
-      if (startTime && endTime) {
-        const timeSpent = endTime - startTime;
-        setTotalTimeSpent(timeSpent); // Update state for display or debugging purposes
-        try {
-          axios.post('http://localhost:5000/time_spent', {
-            collection_id: collectionId,
-            section_id: chapterId,
-            total_time_spent: timeSpent,
-          });
-        } catch (error) {
-          console.error('Error updating time spent:', error);
-        }
+      const endTime = new Date().getTime();
+      const timeSpent = endTime - startTime;
+      setTotalTimeSpent(timeSpent);
+      try {
+        axios.post('http://localhost:5000/time_spent', {
+          collection_id: collectionId,
+          section_id: chapterId,
+          total_time_spent: timeSpent,
+        });
+      } catch (error) {
+        console.error('Error updating time spent:', error);
       }
     };
-  
-    const handleUnload = () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      window.removeEventListener('unload', handleUnload);
-      endTime = new Date().getTime();
-      if (startTime && endTime) {
-        const timeSpent = endTime - startTime;
-        try {
-          axios.post('http://localhost:5000/time_spent', {
-            collection_id: collectionId,
-            section_id: chapterId,
-            total_time_spent: timeSpent,
-          });
-        } catch (error) {
-          console.error('Error updating time spent:', error);
-        }
-      }
-    };
+
     window.addEventListener('beforeunload', handleBeforeUnload);
-    window.addEventListener('unload', handleUnload);
-  
-    startTime = new Date().getTime();
-    
-  
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [chapterId, collectionId]);
+
+  useEffect(() => {
     fetchNotes();
     setupRecognition();
   }, [chapterId, collectionId]);
 
   const fetchNotes = async () => {
     try {
-      const response = await axios.get(`http://localhost:5000/get_notes?section_id=${localStorage.getItem("currentSection")}`);
-      
-      if (response.status !== 200) {
-        throw new Error('Failed to fetch notes');
+      const response = await axios.get(`http://localhost:5000/get_notes?section_id=${chapterId}`);
+      if (response.status === 200) {
+        setNotes(response.data.notes);
+      } else {
+        console.error('Failed to fetch notes');
       }
-      
-      const notesData = response.data.notes;
-      console.log(notesData);
-      setNotes(notesData);
     } catch (error) {
       console.error('Error fetching notes:', error);
     }
   };
-  
 
   const setupRecognition = () => {
-    let recognitionObj = new window.webkitSpeechRecognition();
+    const recognitionObj = new window.webkitSpeechRecognition();
     recognitionObj.continuous = true;
     recognitionObj.interimResults = true;
     recognitionObj.lang = 'en-US';
@@ -108,12 +85,12 @@ const SpeechToText = () => {
       setIsListening(true);
     };
 
-    recognitionObj.onresult = event => {
+    recognitionObj.onresult = (event) => {
       let interimTranscript = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          setResult(prevResult => prevResult + transcript + '. ');
+          setResult((prevResult) => prevResult + transcript + '. ');
         } else {
           interimTranscript += transcript;
         }
@@ -126,7 +103,7 @@ const SpeechToText = () => {
       setIsListening(false);
     };
 
-    recognitionObj.onerror = event => {
+    recognitionObj.onerror = (event) => {
       console.error('Speech recognition error:', event.error);
       setIsListening(false);
     };
@@ -147,13 +124,14 @@ const SpeechToText = () => {
     }
   };
 
-  const handleCheckboxChange = noteId => {
+  const handleCheckboxChange = (noteId) => {
     const updatedSelectedNotes = selectedNotes.includes(noteId)
-      ? selectedNotes.filter(id => id !== noteId)
+      ? selectedNotes.filter((id) => id !== noteId)
       : [...selectedNotes, noteId];
     setSelectedNotes(updatedSelectedNotes);
   };
-  const openModal = note => {
+
+  const openModal = (note) => {
     setCurrentNote(note);
     setIsModalOpen(true);
   };
@@ -164,23 +142,21 @@ const SpeechToText = () => {
   };
 
   const handleSubmit = async () => {
+    const selectedNotesContent = notes
+      .filter((note) => selectedNotes.includes(note.id))
+      .map((note) => note.notes);
+
     try {
-      const response = await axios.post('/compare_and_fetch_concepts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          notes: selectedNotes,
-          userInput: result,
-        }),
+      const response = await axios.post('http://localhost:5000/compare_and_fetch_concepts', {
+        notes: selectedNotesContent,
+        userInput: result || "the Great Gatsby is about Jay Gatsby pursuing the woman of his dreams, Daisy Buchanan",
       });
 
-      if (!response.ok) {
+      if (response.status !== 200) {
         throw new Error('Failed to compare and fetch concepts');
       }
 
-      const conceptsData = await response.json();
+      const conceptsData = response.data;
       console.log('Concepts missed:', conceptsData);
       // Handle displaying concepts missed to the user as needed
     } catch (error) {
@@ -200,7 +176,7 @@ const SpeechToText = () => {
           <button onClick={stopRecording} disabled={!isListening}>
             Stop Record
           </button>
-          <button onClick={handleSubmit} disabled={!result.trim() || selectedNotes.length === 0}>
+          <button onClick={handleSubmit} disabled={selectedNotes.length === 0}>
             Submit
           </button>
         </div>
@@ -210,7 +186,7 @@ const SpeechToText = () => {
         <div className="notes-container">
           <h3>Notes</h3>
           <ul>
-            {notes.map(note => (
+            {notes.map((note) => (
               <li key={note.id}>
                 <input
                   type="checkbox"
@@ -226,7 +202,6 @@ const SpeechToText = () => {
         </div>
       </div>
       <Modal isOpen={isModalOpen} onClose={closeModal} note={currentNote} />
-
     </div>
   );
 };
