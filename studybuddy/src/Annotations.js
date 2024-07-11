@@ -18,6 +18,8 @@ const Annotations = () => {
   const collectionId = localStorage.getItem('currentCollection');
   const [highlightedRange, setHighlightedRange] = useState({ start: 0, end: 0 });
 
+
+
   useEffect(() => {
     const fetchNotes = async () => {
       const response = await axios.get('http://localhost:5000/get_notes_ann', {
@@ -33,6 +35,7 @@ const Annotations = () => {
           notes: note.notes,
         };
       });
+      
       setNotes(fetchedNotes);
     };
     fetchNotes();
@@ -61,11 +64,23 @@ const Annotations = () => {
     }
   }, [selectedNote, chapterId]);
 
-  const handleNoteSelect = (note) => {
+  const handleNoteSelect = async (note) => {
     setSelectedNote(note);
     setAnnotations([]);
+    const suggestedAnnotations = await fetchSuggestedAnnotations(note.id);
+    console.log(suggestedAnnotations);
   };
 
+  const fetchSuggestedAnnotations = async (noteId) => {
+    const response = await axios.get('http://localhost:5000/suggest_annotations', {
+      params: {
+        collection_id: collectionId,
+        section_id: chapterId,
+        note_id: noteId
+      },
+    });
+    return response.data.suggested_annotations;
+  };
   const handleTextHighlight = () => {
     const selection = window.getSelection();
     if (selection.rangeCount > 0) {

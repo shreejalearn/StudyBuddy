@@ -5,6 +5,14 @@ from firebase_admin import credentials, firestore
 from PIL import Image
 import pytesseract
 from rake_nltk import Rake
+import spacy
+import wikipedia
+from wikipedia.exceptions import DisambiguationError, PageError
+from bs4 import BeautifulSoup
+import requests
+from typing import OrderedDict
+from transformers import T5ForConditionalGeneration, AutoTokenizer
+from transformers import pipeline
 
 import io
 import logging
@@ -794,6 +802,83 @@ def resize_images(image_paths, output_folder, target_size=(1280, 720)):
         except Exception as e:
             print(f"Error processing image {image_path}: {e}")
     return resized_paths
+nlp = spacy.load("en_core_web_sm")
+wikipedia.set_lang("en")
+question_generator = pipeline("text2text-generation", model="valhalla/t5-small-qg-hl")
+
+async def generate_question(phrase):
+    question = question_generator(phrase, max_new_tokens=50, num_return_sequences=1)[0]['generated_text'].strip()
+    return question
+
+async def extract_main_phrases(text, max_phrases=5):
+    doc = nlp(text)
+    main_phrases = [chunk.text for chunk in doc.noun_chunks]
+    main_phrases.sort(key=len, reverse=True)
+    return main_phrases[:max_phrases]
+
+async def summarize_concept(main_concept, context):
+    try:
+        search_results = wikipedia.search(main_concept)
+
+        page = wikipedia.page(search_results[0])
+
+        if context.lower() in page.content.lower():
+            summary = page.content.split('.')[0] + '.'
+            return summary
+        else:
+            return await select_relevant_option(main_concept, context, search_results)
+
+    except DisambiguationError as e:
+        return await select_relevant_option(main_concept, context, e.options)
+
+    except PageError:
+        return await generate_question(main_concept)
+
+async def select_relevant_option(main_concept, context, options):
+    context_words = set(context.lower().split())
+    best_match = None
+    best_score = 0
+
+    for option in options[:5]:  
+        try:
+            page = wikipedia.page(option)
+            page_content = page.content.lower()
+            match_count = sum(1 for word in context_words if word in page_content)
+
+            if match_count > best_score:
+                best_match = page
+                best_score = match_count
+
+        except PageError:
+            continue
+
+    if best_match:
+        summary = best_match.content.split('.')[0] + '.'
+        return summary
+    else:
+        return f"No relevant Wikipedia page found for '{main_concept}' in the given context."
+
+
+@app.route('/suggest_annotations', methods=['GET'])
+async def suggest_annotations():
+    note_id = request.args.get('note_id')
+    section_id = request.args.get('section_id')
+    collection_id = request.args.get('collection_id')
+
+    note_ref = db.collection('collections').document(collection_id).collection('sections').document(section_id).collection('notes_in_section').document(note_id)
+    note_content = note_ref.get().to_dict()['notes']
+    
+    main_phrases = await extract_main_phrases(note_content)
+    
+    suggested_annotations = await asyncio.gather(*[summarize_concept(phrase, note_content) for phrase in main_phrases])
+    
+    annotations = [
+        {'text': phrase, 'annotation': annotation}
+        for phrase, annotation in zip(main_phrases, suggested_annotations)
+    ]
+    
+    # Return the suggested annotations as JSON
+    return jsonify({'suggested_annotations': annotations})
 
 
 def extract_concepts_and_summaries(text):
