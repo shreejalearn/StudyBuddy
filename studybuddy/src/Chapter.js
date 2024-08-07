@@ -586,17 +586,7 @@ const ChapterPage = () => {
               <FontAwesomeIcon icon={faTrash} style={styles.deleteIcon} onClick={() => handleDeleteNote(note.id)} />
             </div>
           ))}
-          <div style={styles.uploadSourceBtn}>
-            <button onClick={openWorksheetModal} style={styles.button}>Upload Worksheet</button>
-          </div>
-          <h3 style={styles.header}>Worksheets</h3>
-          {worksheets.map((worksheet) => (
-            <div key={worksheet.id} style={styles.notes}>
-              <p>{worksheet.tldr}</p>
-              <button onClick={() => setSelectedSourceNotes(worksheet.worksheet)} style={styles.button}>View Worksheet</button>
-              <FontAwesomeIcon icon={faTrash} style={styles.deleteIcon} onClick={() => handleDeleteWorksheet(worksheet.id)} />
-            </div>
-          ))}
+        
           <div style={styles.toggleContainer}>
             <span  style={isPublic ? { ...styles.toggleActive, ...styles.button } : { ...styles.toggleInactive, ...styles.button }} onClick={toggleVisibility}>Public</span>
             <span style={!isPublic ? { ...styles.toggleActive, ...styles.button } : { ...styles.toggleInactive, ...styles.button }} onClick={toggleVisibility}>Private</span>
