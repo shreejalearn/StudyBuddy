@@ -5,7 +5,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import './index.css';
 import App from './App';
 import FillerAuth from './FillerAuth';
-import Annotations from './Annotations';
+// import Annotations from './Annotations';
 import Fill from './Fill';
 import SavedResponses from './SavedResponses';
 import PublicSections from './PublicSectionsPage';
@@ -21,7 +21,7 @@ import PracticeTest from './PracticeTest';
 import HomePage from './HomePage';
 
 import Flashcard from './Flashcard';
-import RetentionTest from './RetentionTest';
+// import RetentionTest from './RetentionTest';
 
 import Login from './Login';
 import Signup from './Signup';
@@ -50,9 +50,7 @@ function MainApp() {
             <Route path="/videos" element={<Videos />} />
             <Route path="/stats" element={<Stats />} />
             <Route path="/mygallery" element={<CollectionsPage />} />
-            <Route path="/annotations" element={<Annotations />} />
             <Route path="/sections" element={<Sections />} />
-            <Route path="/retentiontest" element={<RetentionTest />} />
             <Route path="/chapter" element={<Chapter />} />
             <Route path="/question" element={<AskQuestion />} />
             <Route path="/home" element={<Home />} />

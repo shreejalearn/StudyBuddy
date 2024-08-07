@@ -608,10 +608,8 @@ const ChapterPage = () => {
         <div style={styles.tabs}>
           <button style={styles.categoryBtn} onClick={() => navigate('/savedresponses')}>Saved Responses</button>
           <button style={styles.categoryBtn} onClick={() => navigate('/flashcards')}>Flashcards</button>
-          <button style={styles.categoryBtn} onClick={() => navigate('/annotations')}>Annotations</button>
           <button style={styles.categoryBtn} onClick={() => navigate('/videos')}>Video</button>
           <button style={styles.categoryBtn} onClick={() => navigate('/practicetest')}>Practice Test</button>
-          <button style={styles.categoryBtn} onClick={() => navigate('/retentiontest')}>Retention Test</button>
         </div>
         <div style={styles.content}>
           <div style={styles.aiCommunication}>
