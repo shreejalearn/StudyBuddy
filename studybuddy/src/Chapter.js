@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faTrash } from '@fortawesome/free-solid-svg-icons';
+import { faTrash, faEdit } from '@fortawesome/free-solid-svg-icons';
 import Navbar from './Navbar';
 
 const Upload = ({ onUploadSuccess }) => {
@@ -200,6 +200,7 @@ const ChapterPage = () => {
   const collName = localStorage.getItem('collectionName');
   const chapterName = localStorage.getItem('currentSectionName');
   const collectionId = localStorage.getItem('currentCollection');
+  
   const [sources, setSources] = useState([]);
   const [selectedSource, setSelectedSource] = useState([]);
   const [recognizedText, setRecognizedText] = useState('');
@@ -207,6 +208,9 @@ const ChapterPage = () => {
   const [prompt, setPrompt] = useState('');
   const [response, setResponse] = useState('');
   const [isPublic, setIsPublic] = useState(true);
+  const [noteIdBeingEdited, setNoteIdBeingEdited] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedNotes, setEditedNotes] = useState('');
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [uploadType, setUploadType] = useState(null);
   const [responseSaved, setResponseSaved] = useState(false);
@@ -221,7 +225,6 @@ const ChapterPage = () => {
   const [endTime, setEndTime] = useState(null);
   const [totalTimeSpent, setTotalTimeSpent] = useState(0);
   const [componentInitialized, setComponentInitialized] = useState(false);
-
   
   useEffect(() => {
     let startTime = null;
@@ -496,6 +499,36 @@ const ChapterPage = () => {
       console.error('Error adding to flashcards:', error);
     }
   };
+  const handleEditNote = (note) => {
+    setIsEditing(true);
+    setEditedNotes(note.notes);
+    setNoteIdBeingEdited(note.id);
+  };
+
+  const handleSubmitEdit = async () => {
+
+    try {
+      await axios.post('http://localhost:5000/edit_note', {
+        collection_id: collectionId,
+        section_id: chapterId,
+        note_id: noteIdBeingEdited,
+        new_notes: editedNotes,
+      });
+
+      const updatedNotesResponse = await axios.get('http://localhost:5000/get_notes', {
+        params: {
+          collection_id: collectionId,
+          section_id: chapterId,
+        },
+      });
+      setNotes(updatedNotesResponse.data.notes);
+      setIsEditing(false);
+      setEditedNotes('');
+      setNoteIdBeingEdited(null);
+    } catch (error) {
+      console.error('Error editing note:', error);
+    }
+  };
 
   const handleDeleteNote = async (noteId) => {
     try {
@@ -565,6 +598,10 @@ const ChapterPage = () => {
       console.error('Error deleting note:', error);
     }
   };
+  const handleViewSource = (note) => {
+    setSelectedSourceNotes(note.notes);
+    setNoteIdBeingEdited(note.id);
+  };
 
   return (
     <div>
@@ -582,7 +619,7 @@ const ChapterPage = () => {
           {notes.map((note) => (
             <div key={note.id} style={styles.note}>
               <p>{note.tldr}</p>
-              <button onClick={() => setSelectedSourceNotes(note.notes)} style={styles.button}>View Source</button>
+              <button onClick={() => handleViewSource(note)} style={styles.button}>View Source</button>
               <FontAwesomeIcon icon={faTrash} style={styles.deleteIcon} onClick={() => handleDeleteNote(note.id)} />
             </div>
           ))}
@@ -672,10 +709,26 @@ const ChapterPage = () => {
         <div style={styles.modal} onClick={() => setSelectedSourceNotes('')}>
           <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <h2 style={{ textAlign: 'center', color: 'gray', fontSize: '2rem', marginBottom: '3%' }}>Full Contents</h2>
-            <p>{selectedSourceNotes}</p>
+            <FontAwesomeIcon
+              icon={faEdit}
+              style={styles.editIcon}
+              onClick={() => handleEditNote({ id: noteIdBeingEdited, notes: selectedSourceNotes })}
+              />
+            {isEditing ? (
+                <div>
+                  <textarea
+                    value={editedNotes}
+                    onChange={(e) => setEditedNotes(e.target.value)}
+                    style={{ width: '100%', height: '200px' }}
+                  />
+                  <button onClick={handleSubmitEdit} style={styles.submitButton}>Submit</button>
+                </div>
+              ) : (
+                <p>{selectedSourceNotes}</p>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
       {uploadModalOpen && (
         <div style={styles.modal} onClick={closeUploadModal}>
           <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>

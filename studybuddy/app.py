@@ -1552,7 +1552,25 @@ def delete_note():
         return jsonify({'message': 'Note deleted successfully'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+@app.route('/edit_note', methods=['POST'])
+def edit_note():
+    data = request.json
+    collection_id = data.get('collection_id')
+    section_id = data.get('section_id')
+    note_id = data.get('note_id')
+    new_notes = data.get('new_notes')
 
+    if not collection_id or not section_id or not note_id or not new_notes:
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    try:
+        note_ref = db.collection('collections').document(collection_id).collection('sections').document(section_id).collection('notes_in_section').document(note_id)
+        note_ref.update({
+            'notes': new_notes
+        })
+        return jsonify({'message': 'Note updated successfully'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 @app.route('/delete_worksheet', methods=['DELETE'])
 def delete_worksheet():
     collection_id = request.args.get('collection_id')
