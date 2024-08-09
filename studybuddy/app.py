@@ -1732,6 +1732,104 @@ def add_res_to_flashcards():
 
         return jsonify({'error': str(e)}), 500
     
+
+
+# List of models and default index
+list_llm = [
+    "mistralai/Mistral-7B-Instruct-v0.2",
+    "mistralai/Mixtral-8x7B-Instruct-v0.1",
+    "mistralai/Mistral-7B-Instruct-v0.1",
+    "google/gemma-7b-it",
+    "google/gemma-2b-it",
+    "HuggingFaceH4/zephyr-7b-beta",
+    "HuggingFaceH4/zephyr-7b-gemma-v0.1",
+    "meta-llama/Llama-2-7b-chat-hf",
+    "microsoft/phi-2",
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "mosaicml/mpt-7b-instruct",
+    "tiiuae/falcon-7b-instruct",
+    "google/flan-t5-xxl"
+]
+flash_default_llm_index = 0
+
+# Initialize the endpoint
+flash_llm_model = list_llm[flash_default_llm_index]
+flash_llm = HuggingFaceEndpoint(
+    repo_id=flash_llm_model,
+    temperature=0.5,  # Lower temperature for more deterministic output
+    max_new_tokens=500,  # Increase to allow for more output
+    top_k=20
+)
+
+async def generate_flashcards(text, num_flashcards=10):
+    prompt = (
+        f"Generate {num_flashcards} flashcards from the following notes. "
+        "Each flashcard should have a clear question and answer. "
+        "Format each flashcard as follows:\n"
+        "Question: [Your question here]\n"
+        "Answer: [Your answer here]\n\n"
+        "Make sure to include both the question and answer in your response for each flashcard and please prefix each question and answer by \'Question\' and \'Answer\'. \n"
+        f"Notes:\n{text}\n\n"
+    )
+     
+    # Generate the output using the endpoint
+    response =  flash_llm(prompt)
+    
+    # Debugging: Print the raw response
+    print("Raw response:", response)
+    
+    # Process the response directly
+    flashcards = []
+    lines = response.strip().split('\n')
+    
+    # Iterate over lines to split into questions and answers
+    i = 0
+    while i < len(lines):
+        # Check if the line starts with "Question" and there is a subsequent "Answer" line
+        if lines[i].startswith("Question"):
+            # Extract the question number
+            question_number = lines[i].replace("Question", "").strip()
+            # i += 1  # Move to the next line which might be the actual question text
+            
+            # Collect the question text (handle potential empty line)
+            question = ""
+            while i < len(lines) and not lines[i].startswith("Answer"):
+                question += lines[i].replace("Question:", "").strip() + " "
+                i += 1
+            
+            # Check if the next line is an answer
+            if i < len(lines) and lines[i].startswith("Answer"):
+                answer = lines[i].replace("Answer: ", "").strip()
+                flashcards.append({
+                    "question": question.strip(),
+                    "answer": answer
+                })
+                i += 1  # Move past the answer line
+        else:
+            i += 1  # Skip any line that doesn't match the expected format
+ 
+    if(len(flashcards)==0):
+        lines = response.strip().split('\n')
+        
+        # Iterate over lines to split into questions and answers
+        i = 0
+        while i < len(lines):
+            if lines[i].startswith("Question") and i + 1 < len(lines) and lines[i + 1].startswith("Answer"):
+                question = lines[i].replace("Question: ", "").strip()
+                answer = lines[i + 1].replace("Answer: ", "").strip()
+                flashcards.append({
+                    "question": question,
+                    "answer": answer
+                })
+                i += 2  # Move to the next pair
+            else:
+                i += 1  # Skip any line that doesn't match the expected format
+
+
+    return flashcards
+
+ 
+
 @app.route('/suggestflashcards', methods=['POST'])
 async def suggestflashcards():
     request_data = request.get_json()
@@ -1742,17 +1840,8 @@ async def suggestflashcards():
     for doc in notes_docs:
         note_data = doc.to_dict().get('notes', '')
         all_text += note_data + ' '
-    question = f"Task: Generate 10 flashcards based on the following notes. The target is to help the student learn and remember key aspects of the notes. Notes: {all_text} Format: Question: [Your question here] Answer: [Your answer here]"
-    flashcards=[]
-    response_task = await ask_sydney_with_retry(question)
-    pattern = r'\*\*(.*?)\*\*:\n((?:   - .*?\n)*)'
-    pairs = re.findall(pattern, response_task, re.MULTILINE)
-
-    for pair in pairs:
-        question = pair[0].strip()
-        answer = '\n'.join(bullet.strip() for bullet in pair[1].strip().split('\n'))
-        flashcards.append({'question': question, 'answer': answer})
-
+    flashcards = await generate_flashcards(all_text)
+   
     return jsonify({'response': flashcards}), 200
 
 
