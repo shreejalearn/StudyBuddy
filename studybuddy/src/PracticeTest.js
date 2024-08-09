@@ -101,9 +101,23 @@ const QuizComponent = () => {
                         }
                     }
                 );
+                const mcqResponse = await axios.post(
+                    `http://localhost:5000/generate_mcq`, 
+                    {
+                        section_id: sectionId,
+                        num_questions: numFRQQuestions
+                    }, 
+                    {
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                );
                 setQuestions([
                     ...tfResponse.data.map(q => ({ ...q, type: 'tf' })),
-                    ...frqResponse.data.map(q => ({ ...q, type: 'frq' }))
+                    ...frqResponse.data.map(q => ({ ...q, type: 'frq' })),
+                    ...mcqResponse.data.map(q => ({ ...q, type: 'mcq' }))
+
                 ]);
             } else {
                 const flashcardResponse = await axios.post(
@@ -139,16 +153,21 @@ const QuizComponent = () => {
         let totalScore = 0;
         questions.forEach((q, index) => {
           if (q.type === 'tf') {
-            correct[index] = q.answer.toLowerCase() === 'true';
-            if (correct[index]) {
-              totalScore++;
-            }
-          } else {
-            correct[index] = q.answer.toLowerCase();
-            if (checkAnswer(userAnswers[index], q.answer, q.type)) {
-              totalScore++;
-            }
-          }
+        correct[index] = q.answer.toLowerCase() === 'true';
+        if (correct[index]) {
+          totalScore++;
+        }
+      } else if (q.type === 'mcq') {
+        correct[index] = q.correctAnswer;
+        if (userAnswers[index] === q.correctAnswer) {
+          totalScore++;
+        }
+      } else {
+        correct[index] = q.answer.toLowerCase();
+        if (checkAnswer(userAnswers[index], q.answer, q.type)) {
+          totalScore++;
+        }
+      }
         });
         setCorrectAnswers(correct);
         setShowResults(true);

@@ -13,6 +13,7 @@ import requests
 from typing import OrderedDict
 from transformers import T5ForConditionalGeneration, AutoTokenizer
 from transformers import pipeline
+from langchain_community.llms import HuggingFaceEndpoint
 
 import io
 import logging
@@ -1063,36 +1064,54 @@ def get_antonym(word):
             if lemma.antonyms():
                 antonyms.append(lemma.antonyms()[0].name())
     return antonyms[0] if antonyms else None
+default_llm_index_test = 0
+list_llm_test = [
+    "mistralai/Mistral-7B-Instruct-v0.2",
+    "mistralai/Mixtral-8x7B-Instruct-v0.1",
+    "mistralai/Mistral-7B-Instruct-v0.1",
+    "google/gemma-7b-it",
+    "google/gemma-2b-it",
+    "HuggingFaceH4/zephyr-7b-beta",
+    "HuggingFaceH4/zephyr-7b-gemma-v0.1",
+    "meta-llama/Llama-2-7b-chat-hf",
+    "microsoft/phi-2",
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "mosaicml/mpt-7b-instruct",
+    "tiiuae/falcon-7b-instruct",
+    "google/flan-t5-xxl"
+]
 
+
+llm_model_test = list_llm_test[default_llm_index_test]
+llm_test = HuggingFaceEndpoint(
+    repo_id=llm_model_test,
+    temperature=0.5,  # Lower temperature for more deterministic output
+    max_new_tokens=500,  # Increase to allow for more output
+    top_k=20
+)
 def generate_tf_questions(text, num_questions=10):
-    sentences = sent_tokenize(text)
-    questions = []
+    tf_prompt = (
+        f"Generate {num_questions} true/false questions from the following notes: {text}.\n"
+        "Use the following format for each question:\n"
+        "True/False Question:\n"
+        "Question: [Your question here]\n"
+        "Answer: [True/False]\n\n"
+        "Example:\n"
+        "True/False Question:\n"
+        "Question: The sky is blue.\n"
+        "Answer: True\n\n"
+    )
+    tf_response = llm_test(tf_prompt)
 
-    for sentence in sentences:
-        # Generate a true question
-        questions.append((f"True or False: {sentence}", True))
-
-        words = word_tokenize(sentence)
-        tagged = pos_tag(words)
-
-        # False question strategies
-        strategies = [
-            lambda: negate_verb(sentence, tagged),
-            lambda: replace_with_antonym(sentence, tagged),
-            lambda: change_quantity(sentence, tagged),
-        ]
-
-        false_question = None
-        while not false_question and strategies:
-            strategy = random.choice(strategies)
-            false_question = strategy()
-            strategies.remove(strategy)
-
-        if false_question:
-            questions.append((f"True or False: {false_question}", False))
-
-    random.shuffle(questions)
-    return questions[:num_questions]
+    tf_questions = []
+    tf_pairs = tf_response.split("True/False Question:\nQuestion: ")[1:]
+    for pair in tf_pairs:
+        question, answer = pair.split("\nAnswer: ")
+        # Strip extra text and remove possible newlines
+        question = question.strip().split("\n")[0]
+        answer = answer.strip().split("\n")[0]
+        tf_questions.append([question, answer])
+    return tf_questions
 
 def negate_verb(sentence, tagged):
     for i, (word, tag) in enumerate(tagged):
@@ -1126,8 +1145,8 @@ def generate_tf(notes, num_questions):
 
     tf_questions = []
 
-    for question, answer in questions:
-        tf_questions.append({'question': question, 'answer': 'True' if answer else 'False'})
+    for item in questions:
+        tf_questions.append({'question': item[0], 'answer': item[1]})
 
     return tf_questions
 @app.route('/generate_tf_questions', methods=['POST'])
@@ -1265,16 +1284,92 @@ def generate_frq():
         txt=notes
         qa_pairs = []
 
-        for answer, context in get_keywords(txt, 'st'):
-            question, generated_answer = generate_question_answer(context, answer)
-            qa_pairs.append({'question': question, 'answer': generated_answer})
-            if len(qa_pairs) >= num_questions:
-                break  # Stop generating questions once the desired number is reached
+        fr_prompt = (
+            f"Generate {num_questions} free response questions from the following notes: {txt}.\n"
+            "Use the following format for each question:\n"
+            "Free Response Question:\n"
+            "Question: [Your question here]\n"
+            "Answer: [Your answer here]\n\n"
+            "Example:\n"
+            "Free Response Question:\n"
+            "Question: What is the capital of France?\n"
+            "Answer: Paris\n\n"
+        )
+        fr_response = llm_test(fr_prompt)
+        print(fr_response)
+        # return jsonify({'response':fr_response})
+        pattern = r"Question \d+:\s*(.*?)\nAnswer:\s*(.*?)\n"
 
+        # Find all matches
+        matches = re.findall(pattern, fr_response, re.DOTALL)
+
+        # Create list of question-answer pairs
+        fr_questions = [[question.strip(), answer.strip()] for question, answer in matches]
+        if(len(fr_questions)==0):
+            fr_questions = []
+            fr_pairs = fr_response.split("Question: ")[1:]
+            for pair in fr_pairs:
+                question, answer = pair.split("\nAnswer: ")
+                question = question.strip().split("\n")[0]
+                answer = answer.strip().split("\n")[0]
+                fr_questions.append([question, answer])
+        print(fr_questions)
+
+     
+        qa_pairs=[]
+        for thing in fr_questions:
+            qa_pairs.append({'question': thing[0], 'answer': thing[1]})
+            
 
         return jsonify(qa_pairs)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/generate_mcq', methods=['POST'])
+def generate_mcq():
+    try:
+        request_data = request.get_json()
+        section_id = request_data.get('section_id', '')
+        num_questions = int(request_data.get('num_questions',''))
+        notes=note_getter(section_id)
+        txt=notes
+        qa_pairs = []
+
+        mc_prompt = (
+            f"Generate {num_questions} multiple choice questions from the following notes: {txt}.\n"
+            "Use the following format for each question:\n"
+            "Multiple Choice Question:\n"
+            "Question: [Your question here]\n"
+            "Options: [Option A], [Option B], [Option C], [Option D]\n"
+            "Answer: [Correct option]\n\n"
+            "Example:\n"
+            "Multiple Choice Question:\n"
+            "Question: What is the largest planet in our solar system?\n"
+            "Options: [Mercury, Venus, Earth, Jupiter]\n"
+            "Answer: Jupiter\n\n"
+        )
+        
+        mc_response = llm_test(mc_prompt)
+        print("Multiple Choice Questions:", mc_response)
+        
+        mc_questions = []
+        mc_pairs = mc_response.split("Question")[1:]  # Split by "Question " instead of "Multiple Choice Question:"
+        for pair in mc_pairs:
+            if "Options: " in pair and "Answer: " in pair:
+                question_part, rest = pair.split("Options: ")
+                options, answer = rest.split("\nAnswer: ")
+                question = question_part.split(":\n", 1)[-1].strip()  # Get the actual question text after "Question X:\n"
+                mc_questions.append([question, options.strip(), answer.strip()])
+
+
+        return jsonify({'response':mc_questions})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+
+
 
 def generate_combined_questions(num_tf, num_frq, notes):
     tf_questions = generate_tf(notes, num_questions=num_tf)
@@ -1299,7 +1394,7 @@ def generate_questions():
         combined_questions = generate_combined_questions(num_tf, num_frq, notes)
 
         return jsonify({'questions': combined_questions})
-    else:
+    else: 
         return jsonify({'error': 'Request must be JSON'}), 415
 def note_getter(section_id):
     notes = []

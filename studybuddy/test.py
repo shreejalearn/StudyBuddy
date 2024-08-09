@@ -32,49 +32,88 @@ llm = HuggingFaceEndpoint(
 )
 
 def generate_questions(text, num_tf=5, num_free_response=3, num_mc=2):
-    prompt = (
-        f"Generate {num_tf} true/false questions, {num_free_response} free response questions, "
-        f"and {num_mc} multiple choice questions from the following notes. "
-        "Use the following format for each question type:\n"
+    # True/False Questions
+    tf_prompt = (
+        f"Generate {num_tf} true/false questions from the following notes: {text}.\n"
+        "Use the following format for each question:\n"
         "True/False Question:\n"
         "Question: [Your question here]\n"
         "Answer: [True/False]\n\n"
+        "Example:\n"
+        "True/False Question:\n"
+        "Question: The sky is blue.\n"
+        "Answer: True\n\n"
+    )
+    
+    # Generate the output using the endpoint
+    tf_response = llm(tf_prompt)
+    print("True/False Questions:", tf_response)
+
+    tf_questions = []
+    tf_pairs = tf_response.split("True/False Question:\nQuestion: ")[1:]
+    for pair in tf_pairs:
+        question, answer = pair.split("\nAnswer: ")
+        # Strip extra text and remove possible newlines
+        question = question.strip().split("\n")[0]
+        answer = answer.strip().split("\n")[0]
+        tf_questions.append([question, answer])
+
+    # Free Response Questions
+    fr_prompt = (
+        f"Generate {num_free_response} free response questions from the following notes: {text}.\n"
+        "Use the following format for each question:\n"
         "Free Response Question:\n"
         "Question: [Your question here]\n"
         "Answer: [Your answer here]\n\n"
+        "Example:\n"
+        "Free Response Question:\n"
+        "Question: What is the capital of France?\n"
+        "Answer: Paris\n\n"
+    )
+    
+    # Generate the output using the endpoint
+    fr_response = llm(fr_prompt)
+    print("Free Response Questions:", fr_response)
+
+    fr_questions = []
+    fr_pairs = fr_response.split("Question: ")[1:]
+    for pair in fr_pairs:
+        question, answer = pair.split("\nAnswer: ")
+        question = question.strip().split("\n")[0]
+        answer = answer.strip().split("\n")[0]
+        fr_questions.append([question, answer])
+
+
+    # Multiple Choice Questions
+    mc_prompt = (
+        f"Generate {num_mc} multiple choice questions from the following notes: {text}.\n"
+        "Use the following format for each question:\n"
         "Multiple Choice Question:\n"
         "Question: [Your question here]\n"
         "Options: [Option A], [Option B], [Option C], [Option D]\n"
         "Answer: [Correct option]\n\n"
-        f"Notes:\n{text}\n\n"
+        "Example:\n"
+        "Multiple Choice Question:\n"
+        "Question: What is the largest planet in our solar system?\n"
+        "Options: [Mercury, Venus, Earth, Jupiter]\n"
+        "Answer: Jupiter\n\n"
     )
     
-    
     # Generate the output using the endpoint
-    response = llm(prompt)
-    
-    # Debugging: Print the raw response
-    print("Raw response:", response)
-    
-    # Process the response directly
-    questions = []
-    lines = response.strip().split('\n')
-    
-    # Iterate over lines to split into questions and answers
-    i = 0
-    while i < len(lines):
-        if lines[i].startswith("Question:") and i + 1 < len(lines) and lines[i + 1].startswith("Answer:"):
-            question = lines[i].replace("Question: ", "").strip()
-            answer = lines[i + 1].replace("Answer: ", "").strip()
-            questions.append({
-                "question": question,
-                "answer": answer
-            })
-            i += 2  # Move to the next pair
-        else:
-            i += 1  # Skip any line that doesn't match the expected format
+    mc_response = llm(mc_prompt)
+    print("Multiple Choice Questions:", mc_response)
 
-    return questions
+    mc_questions = []
+    mc_pairs = mc_response.split("Question")[1:]  # Split by "Question " instead of "Multiple Choice Question:"
+    for pair in mc_pairs:
+        if "Options: " in pair and "Answer: " in pair:
+            question_part, rest = pair.split("Options: ")
+            options, answer = rest.split("\nAnswer: ")
+            question = question_part.split(":\n", 1)[-1].strip()  # Get the actual question text after "Question X:\n"
+            mc_questions.append([question, options.strip(), answer.strip()])
+
+    return tf_questions, fr_questions, mc_questions
+
 
 def main():
     user_notes = """
@@ -84,15 +123,10 @@ def main():
     """
     # user_notes = "Addition is a fundamental mathematical operation where two or more numbers are combined to find their total sum."
     # Generate questions
-    questions = generate_questions(user_notes, num_tf=5, num_free_response=3, num_mc=2)
-
-    # Print the question suggestions
-    for i, question in enumerate(questions, 1):
-        print(f"Question {i}:")
-        print(f"Question: {question['question']}")
-        print(f"Answer: {question['answer']}")
-        print()
-
+    tf_questions, fr_questions, mc_questions = generate_questions(user_notes, num_tf=5, num_free_response=3, num_mc=2)
+    print("True/False Questions:", tf_questions)
+    print("Free Response Questions:", fr_questions)
+    print("Multiple Choice Questions:", mc_questions)
 # Run the script
 if __name__ == '__main__':
     main()
